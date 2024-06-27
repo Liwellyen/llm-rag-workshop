@@ -1,27 +1,20 @@
 import streamlit as st
 
-from rag import qa_bot
+from rag import rag
 
 
-def main():
-    st.title("DTC Q&A System")
+# https://chatgpt.com/share/53192091-232a-491d-9cd3-aa510390dc1a
 
-    courses = [
-        "data-engineering-zoomcamp",
-        "machine-learning-zoomcamp",
-        "mlops-zoomcamp"
-    ]
+# Streamlit UI
+st.title("RAG Function Invoker")
 
-    with st.form(key='rag_form'):
-        zoomcamp_option = st.selectbox("Select a zoomcamp", courses)
-        prompt = st.text_input("Enter your prompt")
-        response_placeholder = st.empty()
-        submit_button = st.form_submit_button(label='Submit')
+# Input box for user query
+user_query = st.text_input("Enter your query:")
 
-    if submit_button:
-        response_placeholder.markdown("Loading...")
-        response = qa_bot(prompt, course=zoomcamp_option)
-        response_placeholder.markdown(response)
-
-if __name__ == "__main__":
-    main()
+# Button to invoke the function
+if st.button("Run RAG Function"):
+    with st.spinner('Processing...'):
+        result = rag(user_query)
+        st.success("Done!")
+        # Output for showing the results
+        st.write(result)

@@ -1,41 +1,20 @@
-from openai import OpenAI
 from elasticsearch import Elasticsearch
+from openai import OpenAI
 
+es_client = Elasticsearch(hosts=['http://localhost:9200'])
+openai_client = OpenAI()
 
-client = OpenAI()
-
-es = Elasticsearch("http://localhost:9200")
+openai_client = OpenAI(
+    api_key="doesn't matter",
+    base_url='http://localhost:11434/v1/',
+)
 index_name = "course-questions"
 
 
-context_template = """
-Section: {section}
-Question: {question}
-Answer: {text}
-""".strip()
 
-
-prompt_template = """
-You're a course teaching assistant.
-Answer the user QUESTION based on CONTEXT - the documents retrieved from our FAQ database.
-Don't use other information outside of the provided CONTEXT.  
-
-QUESTION: {user_question}
-
-CONTEXT:
-
-{context}
-""".strip()
-
-
-def retrieve_documents(
-        query,
-        index_name="course-questions",
-        max_results=5,
-        course="data-engineering-zoomcamp"
-    ):
+def retrieve(query):
     search_query = {
-        "size": max_results,
+        "size": 5,
         "query": {
             "bool": {
                 "must": {
@@ -47,48 +26,71 @@ def retrieve_documents(
                 },
                 "filter": {
                     "term": {
-                        "course": course
+                        "course": "data-engineering-zoomcamp"
                     }
                 }
             }
         }
     }
+    response = es_client.search(index=index_name, body=search_query)
+
+    relevant_docs = []
+    for hit in response['hits']['hits']:
+        doc = hit['_source']
+        relevant_docs.append(doc)
+
+    return relevant_docs
+
+prompt_template = """
+You're a course teaching assistant. You need to answer a QUESTION from students based on
+the provided CONTEXT. If the provided CONTEXT doesn't contain the answer, say "I don't know"
+
+QUESTION: {query}
+
+CONTEXT:
+
+{context}
+""".strip()
+
+context_template = """
+section: {section}
+question: {question}
+answer: {text}
+""".strip()
+
+def build_prompt(query, context_documents):
+    context = ""
+
+    for doc in context_documents:
+        context_piece = context_template.format(**doc)
+        context = context + '\n\n' + context_piece
     
-    response = es.search(index=index_name, body=search_query)
-    documents = [hit['_source'] for hit in response['hits']['hits']]
-    return documents
+    context = context.strip()
 
+    prompt = prompt_template.format(query=query, context=context)
 
-def build_context(documents):
-    context_result = ""
-    
-    for doc in documents:
-        doc_str = context_template.format(**doc)
-        context_result += ("\n\n" + doc_str)
-    
-    return context_result.strip()
-
-
-def build_prompt(user_question, documents):
-    context = build_context(documents)
-    prompt = prompt_template.format(
-        user_question=user_question,
-        context=context
-    )
     return prompt
 
-
-def ask_openai(prompt, model="gpt-4o"):
-    response = client.chat.completions.create(
-        model=model,
-        messages=[{"role": "user", "content": prompt}]
+def llm(prompt):
+    oai_response = openai_client.chat.completions.create(
+        model="gpt-4o",
+        messages=[
+            {"role": "user", "content": prompt},
+        ]
     )
-    answer = response.choices[0].message.content
-    return answer
+
+    return oai_response.choices[0].message.content
 
 
-def qa_bot(user_question, course):
-    context_docs = retrieve_documents(user_question, course=course)
-    prompt = build_prompt(user_question, context_docs)
-    answer = ask_openai(prompt)
-    return answer
+def llm(prompt):
+    oai_response = openai_client.chat.completions.create(
+        model="phi3",
+        messages=[{"role": "user", "content": prompt},]
+    )
+    
+    return oai_response.choices[0].message.content
+def rag(query):
+    context_documents = retrieve(query)
+    prompt = build_prompt(query, context_documents)
+    response = llm(prompt)
+    return response
